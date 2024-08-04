@@ -41,6 +41,21 @@
   // include      /^https:\/\/(\w*\.)?javdb(\d)*\.com.*$/
 
   /**
+   *   视频扩展名
+   */
+  const videoExtensionArray = ['mp4', 'mkv', 'avi', 'flv', 'wmv', 'mov', 'rmvb']
+
+  /**
+   *  视频标签
+   */
+  const videoTagArray = ['-c', '-破解', '-破解-c', '-4k', '-4K-破解']
+
+  /**
+   *  视频标签正则
+   */
+  const videoTagRegex = new RegExp(videoTagArray.join('|'), 'gi')
+
+  /**
    *   加载动画
    */
   const LoadingGif = {
@@ -80,6 +95,18 @@
         this.element = null
       }
     }
+  }
+
+  /**
+   * 从 localStorage 获取 nfoFiles
+   * @returns {Array} nfoFiles 数组
+   */
+  function getNfoFiles() {
+    const nfoFilesJson = localStorage.getItem('nfoFiles')
+    const aaa = JSON.parse(nfoFilesJson)
+    console.log('%c Line:107 🍭 aaa', 'color:#2eafb0', aaa)
+
+    return nfoFilesJson ? JSON.parse(nfoFilesJson) : null
   }
 
   /**
@@ -169,18 +196,47 @@
           directoryHandle.name
         ])) {
           const file = await fileData.fileHandle.getFile()
+
           const videoFullName = await this.findVideoFileName(
             fileData.parentDirectoryHandle
           )
 
           const item = {
-            originalFileName: file.name.substring(
-              0,
-              file.name.length - '.nfo'.length
-            ),
-            transformedName: this.processFileName(file.name),
+            /**
+             *  视频名称 (去除扩展名)
+             */
+            videoName: file.name.substring(0, file.name.length - '.nfo'.length),
+
+            /**
+             *  视频完整名称 (包含扩展名)
+             */
             videoFullName: videoFullName,
-            hierarchicalStructure: [...fileData.folderNames, videoFullName]
+
+            /**
+             *  视频处理后的名称 (去除扩展名，去除视频标签，转换为小写)
+             */
+            videoProcessedName: this.processFileName(file.name),
+
+            /**
+             *  视频文件标签名
+             */
+            videoTagName: this.getVideoTagName(videoFullName),
+
+            /**
+             *  视频扩展名
+             */
+            videoExtensionName: videoFullName.replace(/^.*\./, ''),
+
+            /**
+             *  目录结构
+             */
+            directoryStructure: [...fileData.folderNames, videoFullName],
+
+            /**
+             *  是否为中文字幕
+             */
+            isChineseSubtitle:
+              videoFullName.includes('-c') || videoFullName.includes('-C')
           }
 
           this.nfoFileNamesSet.add(item)
@@ -210,13 +266,16 @@
       async *getFiles(directoryHandle, folderNames = []) {
         for await (const entry of directoryHandle.values()) {
           try {
+            //  如果是文件并且后缀是.nfo，则yield数据
             if (entry.kind === 'file' && entry.name.endsWith('.nfo')) {
               yield {
                 fileHandle: entry,
                 folderNames: [...folderNames],
                 parentDirectoryHandle: directoryHandle
               }
-            } else if (entry.kind === 'directory') {
+            }
+            //  如果是文件夹，则递归获取文件
+            else if (entry.kind === 'directory') {
               yield* this.getFiles(entry, [...folderNames, entry.name])
             }
           } catch (e) {
@@ -232,22 +291,18 @@
        */
       async findVideoFileName(directoryHandle) {
         for await (const entry of directoryHandle.values()) {
-          if (
-            entry.kind === 'file' &&
-            (entry.name.endsWith('.mp4') ||
-              entry.name.endsWith('.mkv') ||
-              entry.name.endsWith('.avi') ||
-              entry.name.endsWith('.flv') ||
-              entry.name.endsWith('.wmv') ||
-              entry.name.endsWith('.mov') ||
-              entry.name.endsWith('.rmvb'))
-          ) {
-            return entry.name
+          if (entry.kind === 'file') {
+            // 使用数组中的扩展名来检查文件名
+            const extension = videoExtensionArray.find((ext) =>
+              entry.name.endsWith(`.${ext}`)
+            )
+            if (extension) {
+              return entry.name
+            }
           }
         }
         return ''
       }
-
       /**
        * 处理文件名
        * 去掉 '.nfo'、'-c'、'-C' 和 '-破解' 后缀，并转换为小写
@@ -255,13 +310,29 @@
        * @returns {string} 处理后的文件名
        */
       processFileName(fileName) {
-        let processedName = fileName.substring(
-          0,
-          fileName.length - '.nfo'.length
-        )
-        processedName = processedName.replace(/-c$/i, '')
-        processedName = processedName.replace(/-破解$/i, '')
-        return processedName.toLowerCase()
+        // 移除文件扩展名
+        let processedName = fileName
+          .substring(0, fileName.length - '.nfo'.length)
+          .toLowerCase()
+          .replace(videoTagRegex, '')
+        return processedName
+      }
+
+      /**
+       *  获取视频标签名
+       *  @param {string} 视频完整名称 (包含扩展名)
+       */
+      getVideoTagName(videoFullName) {
+        const foundTags = [...videoFullName.matchAll(videoTagRegex)]
+
+        if (foundTags.length > 0) {
+          // 如果找到多个标签，可以选择只返回第一个，或者根据需要调整
+          return foundTags.map((match) => match[0]) // 返回所有找到的标签
+          // 或者只返回第一个找到的标签
+          // return foundTags[0][0];
+        } else {
+          return ['无']
+        }
       }
     }
 
@@ -275,18 +346,9 @@
    */
   const ListPageHandler = (function () {
     /**
-     * @type {string} btsow 搜索 URL 基础路径
+     * btsow 搜索 URL 基础路径
      */
     const btsowUrl = 'https://btsow.com/search/'
-
-    /**
-     * 获取本地存储的 nfo 文件名的 JSON 字符串
-     * @returns {string[]|null} nfo 文件名数组或 null
-     */
-    function getNfoFiles() {
-      const nfoFilesJson = localStorage.getItem('nfoFiles')
-      return nfoFilesJson ? JSON.parse(nfoFilesJson) : null
-    }
 
     /**
      * 创建 btsow 搜索视频按钮
@@ -379,7 +441,7 @@
 
       downloadedVideoTitleElement.className = 'down-loaded-video-title'
 
-      downloadedVideoTitleElement.textContent = item.originalFileName
+      downloadedVideoTitleElement.textContent = item.videoName
 
       Object.assign(downloadedVideoTitleElement.style, {
         margin: '1rem 0',
@@ -396,9 +458,8 @@
       downloadedVideoTitleElement.addEventListener('click', function () {
         event.preventDefault()
 
-        navigator.clipboard.writeText(item.originalFileName)
-        downloadedVideoTitleElement.textContent =
-          item.originalFileName + ' 复制成功'
+        navigator.clipboard.writeText(item.videoName)
+        downloadedVideoTitleElement.textContent = item.videoName + ' 复制成功'
       })
 
       //  判断当前项是否存在 meta-buttons 元素 如果存在就添加到 meta-buttons的第一个位置
@@ -512,7 +573,7 @@
         let isEmbyHaveChineseTorrent = false
 
         nfoFilesArray.forEach(function (item) {
-          if (item.transformedName.includes(videoTitle)) {
+          if (item.videoProcessedName.includes(videoTitle)) {
             highlightBox(ele)
             createOpenLocalFolderBtn(ele)
             showDownloadedVideoTitle(ele, item, count)
@@ -520,11 +581,8 @@
             // 递增索引变量
             count++
 
-            // 当前项的originalFileName 是否为 -c 或者 -C 结尾  如果是则说明当前项为中文磁链
-            if (
-              item.originalFileName.endsWith('-c') ||
-              item.originalFileName.endsWith('-C')
-            ) {
+            // 当前项的videoName 是否为 -c 或者 -C 结尾  如果是则说明当前项为中文磁链
+            if (item.isChineseSubtitle) {
               isEmbyHaveChineseTorrent = true
             }
           }
@@ -552,15 +610,6 @@
      */
     function getVideoTitle() {
       return $('.video-detail strong').first().text().trim().toLowerCase()
-    }
-
-    /**
-     * 从 localStorage 获取 nfoFiles
-     * @returns {Array} nfoFiles 数组
-     */
-    function getNfoFiles() {
-      const nfoFilesJson = localStorage.getItem('nfoFiles')
-      return nfoFilesJson ? JSON.parse(nfoFilesJson) : null
     }
 
     /**
@@ -647,7 +696,7 @@
 
       const titleElement = document.createElement('div')
 
-      titleElement.textContent = item.originalFileName
+      titleElement.textContent = item.videoName
 
       Object.assign(titleElement.style, {
         with: '130px',
@@ -659,7 +708,7 @@
       downloadedVideoTitleListItem.appendChild(titleElement)
 
       downloadedVideoTitleListItem.addEventListener('click', function () {
-        navigator.clipboard.writeText(item.transformedName)
+        navigator.clipboard.writeText(item.videoProcessedName)
         if (downloadedVideoTitleListItem.children.length < 2) {
           const div = document.createElement('div')
           div.textContent = '复制成功'
@@ -796,17 +845,14 @@
       let isEmbyHaveChineseTorrent = false
 
       nfoFiles.forEach(function (item) {
-        if (item.transformedName.includes(videoTitle)) {
+        if (item.videoProcessedName.includes(videoTitle)) {
           highlightVideoPanel()
 
           addDownLocalVideoTitleList(item, count)
           count++
 
-          // 当前项的originalFileName 是否为 -c 或者 -C 结尾  如果是则说明当前项为中文磁链
-          if (
-            item.originalFileName.endsWith('-c') ||
-            item.originalFileName.endsWith('-C')
-          ) {
+          // 当前项是中文字幕 如果是则说明当前项为中文磁链
+          if (item.isChineseSubtitle) {
             isEmbyHaveChineseTorrent = true
           }
         }
@@ -826,18 +872,9 @@
   })()
 
   /**
-   * Emby重复视频处理函数
+   * Emby查找重复视频处理函数
    */
-  const EmbyDuplicateVideoHandler = (function () {
-    /**
-     * 从 localStorage 获取 nfoFiles
-     * @returns {Array} nfoFiles 数组
-     */
-    function getNfoFiles() {
-      const nfoFilesJson = localStorage.getItem('nfoFiles')
-      return nfoFilesJson ? JSON.parse(nfoFilesJson) : null
-    }
-
+  const EmbyFindDuplicateVideoHandler = (function () {
     /**
      * 找出具有相同属性值的重复项
      * @param {Array} items - 要处理的数组
@@ -866,31 +903,31 @@
     }
 
     /**
-     * 获取具有重复 transformedName 的项并去重
+     * 获取具有重复 videoProcessedName 的项并去重
      * @param {Array} items - 要处理的数组
-     * @returns {Array} uniqueTransformedNames - 去重后的 transformedName 数组
+     * @returns {Array} uniqueVideoProcessedNames - 去重后的 videoProcessedName 数组
      */
-    function getUniqueTransformedNames(items) {
-      const transformedNameMap = {}
-      const uniqueTransformedNames = []
+    function getUniqueVideoProcessedName(items) {
+      const videoProcessedNameMap = {}
+      const uniqueVideoProcessedNames = []
 
-      // 遍历每个项，将具有重复 transformedName 的项存储在映射中
+      // 遍历每个项，将具有重复 videoProcessedName 的项存储在映射中
       items.forEach((item) => {
-        const key = item.transformedName
-        if (!transformedNameMap[key]) {
-          transformedNameMap[key] = []
+        const key = item.videoProcessedName
+        if (!videoProcessedNameMap[key]) {
+          videoProcessedNameMap[key] = []
         }
-        transformedNameMap[key].push(item)
+        videoProcessedNameMap[key].push(item)
       })
 
-      // 遍历映射，找出具有重复 transformedName 的项并去重
-      for (const key in transformedNameMap) {
-        if (transformedNameMap[key].length > 1) {
-          uniqueTransformedNames.push(key)
+      // 遍历映射，找出具有重复 videoProcessedName 的项并去重
+      for (const key in videoProcessedNameMap) {
+        if (videoProcessedNameMap[key].length > 1) {
+          uniqueVideoProcessedNames.push(key)
         }
       }
 
-      return uniqueTransformedNames
+      return uniqueVideoProcessedNames
     }
 
     /**
@@ -905,7 +942,7 @@
        */
       const allDuplicates = findDuplicatesByProperty(
         nfoFiles,
-        'transformedName'
+        'videoProcessedName'
       )
       console.log(
         '%c Line:848 🍅 所有重复的影片, 共 ' + allDuplicates.length + ' 个',
@@ -916,7 +953,8 @@
       /**
        *  Emby去重的影片标题
        */
-      const EmbyRemovesDuplicateVideoTitle = getUniqueTransformedNames(nfoFiles)
+      const EmbyRemovesDuplicateVideoTitle =
+        getUniqueVideoProcessedName(nfoFiles)
       console.log(
         '%c Line:898 🥚 Emby重复的影片标题, 共' +
           EmbyRemovesDuplicateVideoTitle.length +
@@ -935,9 +973,27 @@
   })()
 
   /**
+   *  搜索本地指定文件夹
+   */
+  function SearchLocalFolder(videoName) {
+    const nfoFiles = getNfoFiles()
+    if (!nfoFiles) return
+
+    const arr = []
+
+    nfoFiles.forEach(function (item) {
+      if (item.videoFullName.toLowerCase().includes(videoName.toLowerCase())) {
+        arr.push(item)
+      }
+    })
+    console.log('%c Line:990 🌰 arr', 'color:#6ec1c2', arr)
+  }
+
+  /**
    *  页面加载前执行
    */
   async function onBeforeMount() {
+    // 网页原始样式处理
     OriginalStyleHandler()
 
     // 立即调用以初始化按钮和事件处理程序
@@ -949,7 +1005,11 @@
     // 调用详情页处理函数
     DetailPageHandler()
 
-    EmbyDuplicateVideoHandler()
+    // 调用 Emby重复视频处理函数
+    EmbyFindDuplicateVideoHandler()
+
+    //  搜索本地指定文件夹
+    SearchLocalFolder('MDON-046')
   }
 
   onBeforeMount()
