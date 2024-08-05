@@ -7,6 +7,7 @@
 // @icon         https://www.javdb.com/favicon.ico
 // @match        https://*.javdb.com/*
 // @match        *://*.javdb.com/*
+// @include      */web/index.html
 // @connect      jable.tv
 // @connect      missav.com
 // @connect      javhhh.com
@@ -24,6 +25,10 @@
 // @connect      ggjav.com
 // @grant        GM_addStyle
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @connect      192.168.0.4
+
 // ==/UserScript==
 
 ;(function () {
@@ -40,6 +45,106 @@
   // grant: 指定脚本可以使用的GM（Greasemonkey）API功能，这里是添加样式和进行XMLHttpRequest请求。
   // include      /^https:\/\/(\w*\.)?javdb(\d)*\.com.*$/
 
+  /**
+   *  Emby 配置
+   */
+  let embyConfig = {
+    /**
+     * Emby 服务器的 URL。
+     */
+    url: 'http://192.168.0.4:8096',
+    /**
+     * Emby 服务器用户 ID。
+     */
+    userId: 'bd743a8bac9247fb9f5cad8b08945906',
+
+    /**
+     * 发起请求的设备名称。
+     */
+    deviceName: 'Chrome Windows',
+
+    /**
+     * 发起请求设备的 ID。
+     */
+    deviceId: 'aa94db6f-fb2d-48d8-a6e1-6b67b3d90036',
+
+    /**
+     * Emby 客户端的版本号。
+     */
+    clientVersion: '4.8.8.0',
+
+    /**
+     * Emby 服务器使用的语言代码。
+     */
+    language: 'zh-cn',
+
+    /**
+     * 用户的认证令牌。
+     */
+    token: 'abcc5517089e4e28bf46d4cd3e3a74b9',
+
+    /**
+     * 发送到 Emby 服务器的查询字符串参数。
+     */
+    queryParams: {
+      /**
+       * 搜索词。
+       */
+      SearchTerm: '',
+
+      /**
+       * 指定返回的字段列表。
+       */
+      Fields:
+        'BasicSyncInfo,CanDelete,PrimaryImageAspectRatio,ProductionYear,Status,EndDate',
+
+      /**
+       * 查询结果的起始索引。
+       * @type {number}
+       */
+      StartIndex: 0,
+
+      /**
+       * 指定排序的字段。
+       */
+      SortBy: 'SortName',
+
+      /**
+       * 排序的顺序（升序或降序）。
+       */
+      SortOrder: 'Ascending',
+
+      /**
+       * 启用的图像类型。
+       */
+      EnableImageTypes: 'Primary,Backdrop,Thumb',
+
+      /**
+       * 每种类型的图像数量限制。
+       */
+      ImageTypeLimit: 1,
+
+      /**
+       * 是否递归查询子项。
+       */
+      Recursive: true,
+
+      /**
+       * 是否按系列分组节目。
+       */
+      GroupProgramsBySeries: true,
+
+      /**
+       * 返回结果的最大数量。
+       */
+      Limit: 50
+    }
+  }
+
+  /**
+   * Btsow  网址
+   */
+  const btsowUrl = 'https://btsow.com/search/'
   /**
    *   视频扩展名
    */
@@ -346,22 +451,17 @@
    */
   const ListPageHandler = (function () {
     /**
-     * btsow 搜索 URL 基础路径
-     */
-    const btsowUrl = 'https://btsow.com/search/'
-
-    /**
-     * 创建 btsow 搜索视频按钮
+     * 创建 btsow 搜索按钮
      * @param {HTMLElement} ele 要添加的所在的元素
      * @param {string} videoTitle 视频标题
      */
     function createBtsowBtn(ele, videoTitle) {
-      if (ele.querySelector('.btsow')) {
+      if (ele.querySelector('.btsow-btn')) {
         return
       }
 
       const btsowBtnElement = document.createElement('div')
-      btsowBtnElement.className = 'tag btsow'
+      btsowBtnElement.className = 'tag btsow-btn'
       btsowBtnElement.textContent = 'Btsow'
 
       Object.assign(btsowBtnElement.style, {
@@ -379,31 +479,96 @@
     }
 
     /**
-     * 创建本地打开视频所在文件夹按钮
+     * 创建在 Emby 搜索按钮
      * @param {HTMLElement} ele 要添加的所在的元素
      */
-    function createOpenLocalFolderBtn(ele) {
-      if (ele.querySelector('.open_local_folder')) {
+    function createEmbyBtn(ele, videoTitle) {
+      if (ele.querySelector('.emby-btn')) {
         return
       }
 
-      const openLocalFolderBtnElement = document.createElement('div')
-      openLocalFolderBtnElement.className = 'tag open_local_folder'
-      openLocalFolderBtnElement.textContent = '本地打开'
+      const openEmbyBtnElement = document.createElement('div')
+      openEmbyBtnElement.className = 'tag emby-btn'
+      openEmbyBtnElement.textContent = 'Emby'
 
-      Object.assign(openLocalFolderBtnElement.style, {
+      Object.assign(openEmbyBtnElement.style, {
         marginLeft: '10px',
         color: '#fff',
-        backgroundColor: '#F8D714'
+        backgroundColor: '#52B54B'
       })
 
-      openLocalFolderBtnElement.addEventListener('click', function (event) {
+      openEmbyBtnElement.addEventListener('click', function (event) {
         event.preventDefault()
-        const localFolderPath = 'Z:\\日本'
-        // 打开本地文件夹逻辑
+        GM_setValue('EMBY-BTN-VALUE', videoTitle)
+
+        /**
+         * 构建 Emby 请求 URL
+         * @param {Object} config - Emby 配置
+         * @param {Object} params - 查询参数
+         * @returns {string} - 完整的请求 URL
+         */
+        const buildEmbyRequestUrl = (embyConfig) => {
+          const queryParams = {
+            ...embyConfig.queryParams,
+            SearchTerm: videoTitle
+          }
+          const queryString = Object.entries(queryParams)
+            .map(
+              ([key, value]) =>
+                `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+            )
+            .join('&')
+
+          return `${embyConfig.url}/emby/Users/${embyConfig.userId}/Items?${queryString}`
+        }
+
+        GM_xmlhttpRequest({
+          method: 'GET',
+          url: buildEmbyRequestUrl(embyConfig),
+          headers: {
+            Accept: 'application/json',
+            'X-Emby-Client': 'Emby Web',
+            'X-Emby-Device-Name': embyConfig.deviceName,
+            'X-Emby-Device-Id': embyConfig.deviceId,
+            'X-Emby-Client-Version': embyConfig.clientVersion,
+            'X-Emby-Token': embyConfig.token,
+            'X-Emby-Language': embyConfig.language
+          },
+          onload: (response) => {
+            if (response.status >= 200 && response.status < 300) {
+              try {
+                // 将 JSON 字符串转换为 JSON 对象
+                const result = JSON.parse(response.responseText)
+
+                if ((result.Items.length = 1)) {
+                  const id = result.Items[0].Id
+                  const serverId = result.Items[0].ServerId
+                  window.open(
+                    `${embyConfig.url}/web/index.html#!/item?id=${id}&serverId=${serverId}`,
+                    '_blank'
+                  )
+                  GM_setValue('EMBY-BTN-VALUE', '')
+                } else {
+                  GM_setValue('EMBY-BTN-VALUE', videoTitle)
+                  window.open(
+                    `${embyConfig.url}/web/index.html#!/home`,
+                    '_blank'
+                  )
+                }
+              } catch (e) {
+                console.error('请求失败:', e)
+              }
+            } else {
+              console.error(`HTTP 错误: ${response.status}`)
+            }
+          },
+          onerror: (error) => {
+            console.error('Request failed:', error)
+          }
+        })
       })
 
-      ele.querySelector('.tags').appendChild(openLocalFolderBtnElement)
+      ele.querySelector('.tags').appendChild(openEmbyBtnElement)
     }
 
     /**
@@ -575,7 +740,7 @@
         nfoFilesArray.forEach(function (item) {
           if (item.videoProcessedName.includes(videoTitle)) {
             highlightBox(ele)
-            createOpenLocalFolderBtn(ele)
+            createEmbyBtn(ele, videoTitle)
             showDownloadedVideoTitle(ele, item, count)
 
             // 递增索引变量
@@ -609,7 +774,22 @@
      * @returns {string} 视频标题文本
      */
     function getVideoTitle() {
-      return $('.video-detail strong').first().text().trim().toLowerCase()
+      // return $('.video-detail strong').first().text().trim().toLowerCase() || ''
+      // 获取页面上所有的 strong 元素，这些元素必须是 video-detail 类的子元素
+      const strongElements = document.querySelectorAll('.video-detail strong')
+
+      // 检查是否找到了至少一个元素
+      if (strongElements.length > 0) {
+        // 获取第一个 strong 元素的文本内容
+        const titleText =
+          strongElements[0].textContent || strongElements[0].innerText // 兼容旧版IE
+
+        // 去除文本两端的空白字符，并转换为小写
+        return titleText.trim().toLowerCase()
+      }
+
+      // 如果没有找到元素，返回空字符串
+      return ''
     }
 
     /**
@@ -990,9 +1170,62 @@
   }
 
   /**
+   *  在Emby中搜索
+   */
+  function EmbyListPageSearch() {
+    const embyBtnValue = GM_getValue('EMBY-BTN-VALUE')
+
+    console.log('%c Line:998 🍔 embyBtnValue', 'color:#93c0a4', embyBtnValue)
+
+    if (!embyBtnValue) {
+      console.log('没有获取到 embyBtnValue，直接返回')
+      return
+    }
+
+    // 页面加载完成后执行
+    window.addEventListener('load', () => {
+      // 延时以确保所有元素都已加载
+      setTimeout(() => {
+        // 获取输入框元素
+        const inputElement = document.querySelector(
+          'input[is="emby-input"][type="search"]'
+        )
+
+        if (inputElement) {
+          console.log('输入框已找到')
+          // 设置输入框的值
+          inputElement.value = embyBtnValue
+
+          // 创建并触发回车事件
+          inputElement.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              bubbles: true,
+              cancelable: true,
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              charCode: 13
+            })
+          )
+
+          console.log('回车事件已触发')
+          GM_setValue('EMBY-BTN-VALUE', '')
+        } else {
+          console.log('输入框未找到')
+        }
+
+        // 清空值，无论找到与否
+        GM_setValue('EMBY-BTN-VALUE', '')
+      }, 2000) // 延时2秒
+    })
+  }
+
+  /**
    *  页面加载前执行
    */
   async function onBeforeMount() {
+    EmbyListPageSearch()
+
     // 网页原始样式处理
     OriginalStyleHandler()
 

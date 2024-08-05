@@ -10,6 +10,9 @@
 // @include      */web/index.html
 // @downloadURL https://update.greasyfork.org/scripts/459297/embyLaunchPotplayer.user.js
 // @updateURL https://update.greasyfork.org/scripts/459297/embyLaunchPotplayer.meta.js
+// @grant        GM_setValue
+// @grant        GM_getValue
+
 // ==/UserScript==
 
 ;(function () {
@@ -377,9 +380,19 @@
   }
 
   /**
+   *  判断是否为Javdb跳转过来
+   */
+  function checkIfReferredFromJavdb() {
+    const aaa = GM_getValue('emby-btn')
+    console.log('%c Line:387 🍔 aaa', 'color:#93c0a4', aaa)
+  }
+
+  /**
    * 监控DOM变化，显示外部播放器按钮。
    */
   document.addEventListener('viewbeforeshow', function (e) {
+    checkIfReferredFromJavdb()
+
     if (e.detail.contextPath.startsWith('/item?id=')) {
       const mutation = new MutationObserver(function () {
         if (showFlag()) {
